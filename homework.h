@@ -6,8 +6,7 @@
 template<class KeyType, class ValueType, class Hash = std::hash<KeyType>>
 class HashMap {
 private:
-    static const size_t resizeConst = 2;
-    static const size_t INF = 1e9 + 7;
+    static constexpr size_t resizeConst = 2;
     static constexpr double maxAlpha = 0.75;
     static constexpr double minAlpha = 0.25;
 
@@ -21,7 +20,7 @@ private:
         table.clear();
         table.resize(1);
         elemNum = 0;
-        minBucketId = INF;
+        minBucketId = 0;
         bucketCount = 1;
     }
 
@@ -39,18 +38,18 @@ private:
         }
         table.clear();
         elemNum = 0;
-        minBucketId = INF;
+        minBucketId = bucketCount - 1;
         table.resize(bucketCount);
-        for (auto& x : copy) {
+        for (const auto& x : copy) {
             add(x);
         }
     }
 
     void add(const std::pair<KeyType, ValueType>& elem) {
-    	size_t temp = getBucketId(elem.first);
-    	if (temp < minBucketId) {
-    		minBucketId = temp;
-    	}
+        size_t temp = getBucketId(elem.first);
+        if (temp < minBucketId) {
+            minBucketId = temp;
+        }
         table[temp].emplace_back(elem);
         if (static_cast<double>(++elemNum) / static_cast<double>(bucketCount) > maxAlpha) {
             bucketCount *= resizeConst;
@@ -74,7 +73,7 @@ private:
     }
 
     ValueType* findByHash(size_t h, const KeyType& key) {
-    	for (auto it = table[h].begin(); it != table[h].end(); ++it) {
+        for (auto it = table[h].begin(); it != table[h].end(); ++it) {
             if (it->first == key) {
                 return &(it->second);
             }
@@ -181,9 +180,9 @@ public:
         }
 
         iterator operator++(int) {
-            iterator duck = iterator(vec, elemBucketId, elemPointer);
+            iterator temp = iterator(vec, elemBucketId, elemPointer);
             ++(*this);
-            return duck;
+            return temp;
         }
 
         std::pair<const KeyType, ValueType>& operator*() {
@@ -276,7 +275,7 @@ public:
     };
 
     iterator begin() {
-    	if (elemNum) return iterator(&table, minBucketId, table[minBucketId].begin());
+        if (elemNum) return iterator(&table, minBucketId, table[minBucketId].begin());
         return end();
     }
 
@@ -324,7 +323,7 @@ public:
     }
 
     ValueType& operator[](const KeyType& key) {
-    	size_t hash = hasher(key);
+        size_t hash = hasher(key);
         auto it = findByHash(hash % bucketCount, key);
         if (it == nullptr) {
             add({key, ValueType()});
@@ -337,13 +336,11 @@ public:
     const ValueType& at(const KeyType& key) const {
         auto it = find(key);
         if (it == end()) {
-            throw std::out_of_range("out of range");
+            throw std::out_of_range("key not found");
         } else {
             return it->second;
         }
     }
 
-    ~HashMap() {
-        table.clear();
-    }
+    ~HashMap() {}
 };
