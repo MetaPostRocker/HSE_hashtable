@@ -6,47 +6,60 @@
 template<class KeyType, class ValueType, class Hash = std::hash<KeyType>>
 class HashMap {
 private:
+    static const size_t resizeConst = 2;
+    static const size_t INF = 1e9 + 7;
+    static constexpr double maxAlpha = 0.75;
+    static constexpr double minAlpha = 0.25;
+
     std::vector<std::list<std::pair<const KeyType, ValueType>>> table;
     size_t elemNum;
-    size_t tableSize;
+    size_t bucketCount;
     Hash hasher;
+    size_t minBucketId;
 
     void initTable() {
         table.clear();
         table.resize(1);
         elemNum = 0;
-        tableSize = 1;
+        minBucketId = INF;
+        bucketCount = 1;
     }
 
-    size_t pos(const KeyType& key) const {
-        return hasher(key) % tableSize;
+    size_t getBucketId(const KeyType& key) const {
+        return hasher(key) % bucketCount;
     }
 
     void rebuild() {
         std::vector<std::pair<const KeyType, ValueType>> copy;
-        for (auto& list : table) {
+        copy.reserve(table.size());
+        for (const auto& list : table) {
             for (auto& elem : list) {
                 copy.emplace_back(elem);
             }
         }
         table.clear();
         elemNum = 0;
-        table.resize(tableSize);
+        minBucketId = INF;
+        table.resize(bucketCount);
         for (auto& x : copy) {
             add(x);
         }
     }
 
     void add(const std::pair<KeyType, ValueType>& elem) {
-        table[pos(elem.first)].emplace_back(elem);
-        if (static_cast<double>(++elemNum) / static_cast<double>(tableSize) > 0.75) {
-            tableSize *= 2;
+    	size_t temp = getBucketId(elem.first);
+    	if (temp < minBucketId) {
+    		minBucketId = temp;
+    	}
+        table[temp].emplace_back(elem);
+        if (static_cast<double>(++elemNum) / static_cast<double>(bucketCount) > maxAlpha) {
+            bucketCount *= resizeConst;
             rebuild();
         }
     }
 
     void del(const KeyType& key) {
-        size_t x = pos(key);
+        size_t x = getBucketId(key);
         for (auto it = table[x].begin(); it != table[x].end(); ++it) {
             if (it->first == key) {
                 table[x].erase(it);
@@ -54,15 +67,36 @@ private:
                 break;
             }
         }
-        if (static_cast<double>(elemNum) / static_cast<double>(tableSize) < 0.25) {
-            tableSize /= 2;
+        if (static_cast<double>(elemNum) / static_cast<double>(bucketCount) < minAlpha) {
+            bucketCount /= resizeConst;
             rebuild();
         }
+    }
+
+    ValueType* findByHash(size_t h, const KeyType& key) {
+    	for (auto it = table[h].begin(); it != table[h].end(); ++it) {
+            if (it->first == key) {
+                return &(it->second);
+            }
+        }
+        return nullptr;
     }
 
 public:
     HashMap(const Hash& h = Hash()): hasher(h) {
         initTable();
+    }
+
+    HashMap(const HashMap& other): table(other.table), hasher(other.hasher) {
+        elemNum = other.elemNum;
+        bucketCount = other.bucketCount;
+        minBucketId = other.minBucketId;
+    }
+
+    HashMap(HashMap&& other): table(std::move(other.table)), hasher(std::move(other.hasher)) {
+        elemNum = other.elemNum;
+        bucketCount = other.bucketCount;
+        minBucketId = other.minBucketId;
     }
 
     template<class ItType>
@@ -73,7 +107,7 @@ public:
         }
     }
 
-    HashMap(const std::initializer_list<std::pair<KeyType, ValueType>>& list, const Hash& h = Hash()) : hasher(h) {
+    HashMap(std::initializer_list<std::pair<KeyType, ValueType>> list, const Hash& h = Hash()) : hasher(h) {
         initTable();
         for (auto& elem : list) {
             add(elem);
@@ -98,16 +132,25 @@ public:
 
     HashMap& operator = (const HashMap other) {
         clear();
-        for (auto& elem : other) {
+        for (const auto& elem : other) {
             add(elem);
         }
+        return *this;
+    }
+
+    HashMap& operator = (const HashMap&& other) {
+        table = std::move(other.table);
+        hasher = std::move(other.hasher);
+        elemNum = other.elemNum;
+        minBucketId = other.minBucketId;
+        bucketCount = other.bucketCount;
         return *this;
     }
 
     class iterator: public std::iterator<std::forward_iterator_tag, std::pair<const KeyType, ValueType>> {
     private:
         std::vector<std::list<std::pair<const KeyType, ValueType>>>* vec;
-        int vecPos;
+        int elemBucketId;
         typename std::list<std::pair<const KeyType, ValueType>>::iterator elemPointer;
 
     public:
@@ -115,30 +158,30 @@ public:
 
         iterator(std::vector<std::list<std::pair<const KeyType, ValueType>>>* vecRef, int pos,
             typename std::list<std::pair<const KeyType, ValueType>>::iterator ptr):
-            vec(vecRef), vecPos(pos) ,elemPointer(ptr) {}
+            vec(vecRef), elemBucketId(pos), elemPointer(ptr) {}
 
         iterator& operator=(const iterator& other) {
             vec = other.vec;
-            vecPos = other.vecPos;
+            elemBucketId = other.elemBucketId;
             elemPointer = other.elemPointer;
             return *this;
         }
 
         iterator operator++() {
             elemPointer++;
-            while (vecPos < (*vec).size() && elemPointer == (*vec)[vecPos].end()) {
-                vecPos++;
-                elemPointer = (*vec)[vecPos].begin();
+            while (elemBucketId < (*vec).size() && elemPointer == (*vec)[elemBucketId].end()) {
+                elemBucketId++;
+                elemPointer = (*vec)[elemBucketId].begin();
             }
-            if (vecPos == (*vec).size()) {
-                vecPos--;
-                elemPointer = (*vec)[vecPos].end();
+            if (elemBucketId == (*vec).size()) {
+                elemBucketId--;
+                elemPointer = (*vec)[elemBucketId].end();
             }
             return *this;
         }
 
         iterator operator++(int) {
-            iterator duck = iterator(vec, vecPos, elemPointer);
+            iterator duck = iterator(vec, elemBucketId, elemPointer);
             ++(*this);
             return duck;
         }
@@ -171,7 +214,7 @@ public:
     class const_iterator: public std::iterator<std::forward_iterator_tag, const std::pair<const KeyType, ValueType>> {
     private:
         const std::vector<std::list<std::pair<const KeyType, ValueType>>>* vec;
-        int vecPos;
+        int elemBucketId;
         typename std::list<std::pair<const KeyType, ValueType>>::const_iterator elemPointer;
 
     public:
@@ -179,32 +222,32 @@ public:
 
         const_iterator(const std::vector<std::list<std::pair<const KeyType, ValueType>>>* vecRef, int pos,
             typename std::list<std::pair<const KeyType, ValueType>>::const_iterator ptr):
-            vec(vecRef), vecPos(pos) ,elemPointer(ptr) {}
+            vec(vecRef), elemBucketId(pos), elemPointer(ptr) {}
 
         const_iterator operator++() {
             elemPointer++;
-            while (vecPos < (*vec).size() && elemPointer == (*vec)[vecPos].end()) {
-                vecPos++;
-                elemPointer = (*vec)[vecPos].begin();
+            while (elemBucketId < (*vec).size() && elemPointer == (*vec)[elemBucketId].end()) {
+                elemBucketId++;
+                elemPointer = (*vec)[elemBucketId].begin();
             }
-            if (vecPos == (*vec).size()) {
-                vecPos--;
-                elemPointer = (*vec)[vecPos].end();
+            if (elemBucketId == (*vec).size()) {
+                elemBucketId--;
+                elemPointer = (*vec)[elemBucketId].end();
             }
             return *this;
         }
 
         const_iterator& operator=(const const_iterator& other) {
             vec = other.vec;
-            vecPos = other.vecPos;
+            elemBucketId = other.elemBucketId;
             elemPointer = other.elemPointer;
             return *this;
         }
 
         const_iterator operator++(int) {
-            const_iterator duck = const_iterator(vec, vecPos, elemPointer);
+            const_iterator temp = const_iterator(vec, elemBucketId, elemPointer);
             ++(*this);
-            return duck;
+            return temp;
         }
 
         const std::pair<const KeyType, ValueType>& operator*() {
@@ -233,33 +276,25 @@ public:
     };
 
     iterator begin() {
-        for (int i = 0; i < tableSize; ++i) {
-            if (!table[i].empty()) {
-                return iterator(&table, i, table[i].begin());
-            }
-        }
+    	if (elemNum) return iterator(&table, minBucketId, table[minBucketId].begin());
         return end();
     }
 
     const_iterator begin() const {
-        for (int i = 0; i < tableSize; ++i) {
-            if (!table[i].empty()) {
-                return const_iterator(&table, i, table[i].begin());
-            }
-        }
+        if (elemNum) return const_iterator(&table, minBucketId, table[minBucketId].begin());
         return end();
     }
 
     iterator end() {
-        return iterator(&table, tableSize - 1, table[tableSize - 1].end());
+        return iterator(&table, bucketCount - 1, table[bucketCount - 1].end());
     }
 
     const_iterator end() const {
-        return const_iterator(&table, tableSize - 1, table[tableSize - 1].end());
+        return const_iterator(&table, bucketCount - 1, table[bucketCount - 1].end());
     }
 
     iterator find(const KeyType& key) {
-        size_t x = pos(key);
+        size_t x = getBucketId(key);
         for (auto it = table[x].begin(); it != table[x].end(); ++it) {
             if (it->first == key) {
                 return iterator(&table, x, it);
@@ -269,7 +304,7 @@ public:
     }
 
     const_iterator find(const KeyType& key) const {
-        size_t x = pos(key);
+        size_t x = getBucketId(key);
         for (auto it = table[x].begin(); it != table[x].end(); ++it) {
             if (it->first == key) {
                 return const_iterator(&table, x, it);
@@ -285,18 +320,17 @@ public:
     }
 
     void erase(const KeyType& key) {
-        if (find(key) != end()) {
-            del(key);
-        }
+        del(key);
     }
 
     ValueType& operator[](const KeyType& key) {
-        auto it = find(key);
-        if (it == end()) {
+    	size_t hash = hasher(key);
+        auto it = findByHash(hash % bucketCount, key);
+        if (it == nullptr) {
             add({key, ValueType()});
-            return find(key)->second;
+            return *findByHash(hash % bucketCount, key);
         } else {
-            return it->second;
+            return *it;
         }
     }
 
@@ -307,5 +341,9 @@ public:
         } else {
             return it->second;
         }
+    }
+
+    ~HashMap() {
+        table.clear();
     }
 };
