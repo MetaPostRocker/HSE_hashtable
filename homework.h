@@ -58,10 +58,10 @@ private:
     }
 
     void del(const KeyType& key) {
-        size_t x = getBucketId(key);
-        for (auto it = table[x].begin(); it != table[x].end(); ++it) {
+        size_t bucketId = getBucketId(key);
+        for (auto it = table[bucketId].begin(); it != table[bucketId].end(); ++it) {
             if (it->first == key) {
-                table[x].erase(it);
+                table[bucketId].erase(it);
                 elemNum--;
                 break;
             }
@@ -73,9 +73,9 @@ private:
     }
 
     ValueType* findByHash(size_t h, const KeyType& key) {
-        for (auto it = table[h].begin(); it != table[h].end(); ++it) {
-            if (it->first == key) {
-                return &(it->second);
+        for (auto& elem : table[h]) {
+            if (elem.first == key) {
+                return &(elem.second);
             }
         }
         return nullptr;
