@@ -1,2 +1,2 @@
 # HSE_hashtable
-Algo homework
+Hash Table Library
